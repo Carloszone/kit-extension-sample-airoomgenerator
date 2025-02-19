@@ -24,7 +24,7 @@ from .item_generator import place_greyboxes, place_deepsearch_results
 from openai import AsyncOpenAI
 
 
-async def chatGPT_call(prompt: str):
+def chatGPT_call(prompt: str):
     # Load your API key from an environment variable or secret management service
     settings = carb.settings.get_settings()
 
@@ -74,7 +74,7 @@ async def call_Generate(prim_info, prompt, use_chatgpt, use_deepsearch, response
         root_prim_path = prim_info.area_name + "/items/"
 
     if use_chatgpt:  # when calling the API
-        objects, response = await chatGPT_call(concat_prompt)
+        objects, response = chatGPT_call(concat_prompt)
     else:  # when testing and you want to skip the API call
         data = json.loads(assistant_input)
         objects = data['area_objects_list']
