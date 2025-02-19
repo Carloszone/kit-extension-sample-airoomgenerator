@@ -17,9 +17,12 @@ import json
 import carb
 import aiohttp
 import asyncio
+import openai
 from .prompts import system_input, user_input, assistant_input
 from .deep_search import query_items
 from .item_generator import place_greyboxes, place_deepsearch_results
+from openai import AsyncOpenAI
+
 
 async def chatGPT_call(prompt: str):
     # Load your API key from an environment variable or secret management service
@@ -27,41 +30,58 @@ async def chatGPT_call(prompt: str):
     
     apikey = settings.get_as_string("/persistent/exts/omni.example.airoomgenerator/APIKey")
     my_prompt = prompt.replace("\n", " ")
-    
-    # Send a request API
-    try:
-        parameters = {
-            "model": "gpt-3.5-turbo",
-            "messages": [
-                    {"role": "system", "content": system_input},
-                    {"role": "user", "content": user_input},
-                    {"role": "assistant", "content": assistant_input},
-                    {"role": "user", "content": my_prompt}
-                ]
-        }
-        chatgpt_url = "https://api.openai.com/v1/chat/completions"
-        headers = {"Authorization": "Bearer %s" % apikey}
-        # Create a completion using the chatGPT model
-        async with aiohttp.ClientSession() as session:
-            async with session.post(chatgpt_url, headers=headers, json=parameters) as r:
-                response = await r.json()
-        text = response["choices"][0]["message"]['content']
-    except Exception as e:
-        carb.log_error("An error as occurred")
-        return None, str(e)
 
-    # Parse data that was given from API
-    try: 
-        #convert string to  object
-        data = json.loads(text)
-    except ValueError as e:
-        carb.log_error(f"Exception occurred: {e}")
+    # Create an OpenAI client
+    client = AsyncOpenAI(api_key=apikey)
+
+    # Define the role of each message in the conversation
+    try:
+        # 调用 OpenAI API，向模型发送问题，增加超时限制
+        chat_completion = await client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_input,
+                },
+                {
+                    "role": 'user',
+                    "content": user_input,
+                },
+                {
+                    "role": 'assistant',
+                    "content": assistant_input,
+                },
+                {
+                    "role": 'user',
+                    "content": my_prompt,
+                }
+            ],
+            model="gpt-4o",
+        )
+
+        # 获取并返回生成的文本
+        text = str(chat_completion.choices[0].message.content)
+
+    except openai.APIConnectionError as e:
+        carb.log_error("The server could not be reached")
+        carb.log_error(e.__cause__)  # an underlying Exception, likely raised within httpx.
+        text = None
+    except openai.RateLimitError as e:
+        carb.log_error("A 429 status code was received; we should back off a bit.")
+        text = None
+    except openai.APIStatusError as e:
+        carb.log_error("Another non-200-range status code was received")
+        carb.log_error(e.status_code)
+        carb.log_error(e.response)
+        text = None
+    except Exception as e:
+        carb.log_error( f"发生错误: {e}")
+        text = None
+
+    if isinstance(text, str):
+        return True, text
+    else:
         return None, text
-    else: 
-        # Get area_objects_list
-        object_list = data['area_objects_list']
-        
-        return object_list, text
 
 async def call_Generate(prim_info, prompt, use_chatgpt, use_deepsearch, response_label, progress_widget):
     run_loop = asyncio.get_event_loop()
