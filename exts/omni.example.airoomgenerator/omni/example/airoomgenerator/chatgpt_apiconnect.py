@@ -17,47 +17,54 @@ import json
 import carb
 import aiohttp
 import asyncio
-import requests
 from .prompts import system_input, user_input, assistant_input
 from .deep_search import query_items
 from .item_generator import place_greyboxes, place_deepsearch_results
-from openai import AsyncOpenAI
 
 
-def chatGPT_call(prompt: str):
+async def chatGPT_call(prompt: str):
     # Load your API key from an environment variable or secret management service
     settings = carb.settings.get_settings()
 
     apikey = settings.get_as_string("/persistent/exts/omni.example.airoomgenerator/APIKey")
     my_prompt = prompt.replace("\n", " ")
+    proxy_setting = 'http://127.0.0.1:10808'
+    connector = aiohttp.TCPConnector(ssl=False)
 
-    # set request info
-    openai_url = "https://api.openai.com/v1/engines/gpt-4o/completions"
-    openai_headers = {
-        "Authorization": f"Bearer {apikey}",
-        "Content-Type": "application/json"
-    }
-    open_ai_json = {
-        "model": "gpt-4o",
-        "messages": [
-            {"role": "system", "content": system_input},
-            {"role": "user", "content": user_input},
-            {"role": "assistant", "content": assistant_input},
-            {"role": "user", "content": my_prompt}
-        ]
-    }
+    # Send a request API
+    try:
+        parameters = {
+            "model": "gpt-3.5-turbo",
+            "messages": [
+                {"role": "system", "content": system_input},
+                {"role": "user", "content": user_input},
+                {"role": "assistant", "content": assistant_input},
+                {"role": "user", "content": my_prompt}
+            ]
+        }
+        chatgpt_url = "https://api.openai.com/v1/chat/completions"
+        headers = {"Authorization": "Bearer %s" % apikey}
+        # Create a completion using the chatGPT model
+        async with aiohttp.ClientSession(connector=connector) as session:
+            async with session.post(chatgpt_url, headers=headers, json=parameters, proxy=proxy_setting) as r:
+                response = await r.json()
+        text = response.choices[0].message.content
+    except Exception as e:
+        carb.log_error("An error as occurred")
+        return None, str(e)
 
-    response = requests.post(openai_url, headers=openai_headers, json=open_ai_json)
-
-    # 检查请求是否成功
-    if response.status_code == 200:
-        # 解析 JSON 响应
-        response_json = response.json()
-        # 提取生成的文本
-        model_reply = response_json["choices"][0]["message"]["content"]
-        return True, model_reply
+    # Parse data that was given from API
+    try:
+        # convert string to  object
+        data = json.loads(text)
+    except ValueError as e:
+        carb.log_error(f"Exception occurred: {e}")
+        return None, text
     else:
-        return None, None
+        # Get area_objects_list
+        object_list = data['area_objects_list']
+
+        return object_list, text
 
 
 async def call_Generate(prim_info, prompt, use_chatgpt, use_deepsearch, response_label, progress_widget):
@@ -74,7 +81,7 @@ async def call_Generate(prim_info, prompt, use_chatgpt, use_deepsearch, response
         root_prim_path = prim_info.area_name + "/items/"
 
     if use_chatgpt:  # when calling the API
-        objects, response = chatGPT_call(concat_prompt)
+        objects, response = await chatGPT_call(concat_prompt)
     else:  # when testing and you want to skip the API call
         data = json.loads(assistant_input)
         objects = data['area_objects_list']
