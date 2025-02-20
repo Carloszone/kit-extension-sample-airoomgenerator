@@ -34,7 +34,7 @@ async def chatGPT_call(prompt: str):
     # Send a request API
     try:
         parameters = {
-            "model": "gpt-3.5-turbo",
+            "model": "gpt-4o",
             "messages": [
                 {"role": "system", "content": system_input},
                 {"role": "user", "content": user_input},
